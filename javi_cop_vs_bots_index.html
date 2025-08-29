@@ -45,6 +45,19 @@
       </div>
       <button id="mobAtk" class="atk">ĐÁNH</button>
     </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="pill">Ảnh nhân vật <input type="file" id="heroFile" accept="image/*" style="margin-left:6px"></label>
+      <input type="url" id="heroUrl" placeholder="URL ảnh" style="background:#0e1422;border:1px solid #1b2740;color:#fff;padding:8px 12px;border-radius:999px;min-width:220px">
+      <button id="heroLoad" class="btn">Tải URL</button>
+    </div>
+  </div>
+        <button class="padb" data-k="ArrowRight">▶</button>
+        <button class="padb" data-k="ArrowLeft">◀</button>
+        <button class="padb" data-k="ArrowDown">▼</button>
+        <div></div>
+      </div>
+      <button id="mobAtk" class="atk">ĐÁNH</button>
+    </div>
     <div></div>
   </div>
 <script>
@@ -54,10 +67,10 @@
   const restartBtn=document.getElementById('restart');
 
   // Load player portrait (tries javi.JPG next to index.html)
-  let javiImg = new Image();
-  javiImg.onload = ()=>{};
-  javiImg.onerror = ()=>{ javiImg=null; };
-  javiImg.src = 'javi.JPG'; // change if needed
+  let heroImg = new Image();
+  heroImg.onload = ()=>{};
+  heroImg.onerror = ()=>{ heroImg=null; };
+  heroImg.src = 'javi.JPG'; // mặc định, có thể thay bằng ảnh upload/URL // change if needed
 
   // Game state
   const state = { w: cv.width, h: cv.height, over:false, wave:1, score:0 };
@@ -98,9 +111,9 @@
       // body
       ctx.fillStyle='#1f3960'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2); ctx.fill();
       // head portrait clipped
-      if(javiImg){
+      if(heroImg){
         ctx.save(); ctx.beginPath(); ctx.arc(this.x,this.y,this.r-4,0,Math.PI*2); ctx.clip();
-        ctx.drawImage(javiImg, this.x-(this.r-4), this.y-(this.r-4), (this.r-4)*2, (this.r-4)*2);
+        ctx.drawImage(heroImg, this.x-(this.r-4), this.y-(this.r-4), (this.r-4)*2, (this.r-4)*2);
         ctx.restore();
       } else {
         ctx.fillStyle='#6fb1ff'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r-4,0,Math.PI*2); ctx.fill();
@@ -114,17 +127,28 @@
   }
 
   class Bot extends Entity{
-    constructor(x,y,spd,hp){ super(x,y); this.r=18; this.speed=spd||1.7; this.hp=hp||50; this.maxhp=this.hp; this.hitCD=0; }
+    constructor(x,y,spd,hp){ super(x,y); this.r=20; this.speed=spd||1.7; this.hp=hp||50; this.maxhp=this.hp; this.hitCD=0; this.ang=Math.random()*Math.PI*2; this.rot=(Math.random()>.5?1:-1)*(0.01+Math.random()*0.02); }
     step(player){
       const dx=player.x-this.x, dy=player.y-this.y; const d=Math.hypot(dx,dy)||1; const nx=dx/d, ny=dy/d;
-      this.x+=nx*this.speed; this.y+=ny*this.speed; this.hitCD=Math.max(0,this.hitCD-1);
-      if(d < this.r+player.r-2 && this.hitCD===0){ this.hitCD=30; player.hit(8, -nx*18, -ny*18); }
+      this.x+=nx*this.speed; this.y+=ny*this.speed; this.hitCD=Math.max(0,this.hitCD-1); this.ang+=this.rot;
+      if(d < this.r+player.r-2 && this.hitCD===0){ this.hitCD=26; player.hit(10, -nx*20, -ny*20); }
     }
     draw(){
-      ctx.fillStyle='#2a2f3f'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r+6,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='#9ce2ff'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2); ctx.fill();
-      // eye line
-      ctx.strokeStyle='#072d3e'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(this.x-this.r*0.6,this.y); ctx.lineTo(this.x+this.r*0.6,this.y); ctx.stroke();
+      // outer glow
+      ctx.save(); ctx.translate(this.x,this.y); ctx.rotate(this.ang);
+      ctx.shadowColor='rgba(255,40,40,.6)'; ctx.shadowBlur=18;
+      // spiky ring
+      ctx.fillStyle='#1a0e13'; ctx.beginPath(); const spikes=9, R=this.r+10, r=this.r-2;
+      for(let i=0;i<spikes*2;i++){ const a=i*Math.PI/spikes; const rad=(i%2?R:r); ctx.lineTo(Math.cos(a)*rad, Math.sin(a)*rad);} ctx.closePath(); ctx.fill();
+      ctx.shadowBlur=0;
+      // core body
+      ctx.fillStyle='#2b0f18'; ctx.beginPath(); ctx.arc(0,0,this.r,0,Math.PI*2); ctx.fill();
+      // eyes
+      ctx.fillStyle='#ff3b3b'; ctx.beginPath(); ctx.ellipse(-6,-2,6,4,0,0,Math.PI*2); ctx.ellipse(6,-2,6,4,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#fff'; ctx.fillRect(-8,-2,4,2); ctx.fillRect(4,-2,4,2);
+      // fangs
+      ctx.fillStyle='#e6e6e6'; ctx.beginPath(); ctx.moveTo(-6,6); ctx.lineTo(-2,12); ctx.lineTo(2,6); ctx.moveTo(6,6); ctx.lineTo(10,12); ctx.lineTo(14,6); ctx.fill();
+      ctx.restore();
     }
   }
 
@@ -201,6 +225,13 @@
   }
   document.getElementById('mobAtk').addEventListener('pointerdown',e=>{e.preventDefault(); attack();});
   restartBtn.addEventListener('click',()=>location.reload());
+
+  // hero image loaders
+  const heroFile=document.getElementById('heroFile');
+  const heroUrl=document.getElementById('heroUrl');
+  const heroLoad=document.getElementById('heroLoad');
+  if(heroFile){ heroFile.addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{ const im=new Image(); im.onload=()=>{ heroImg=im; }; im.src=ev.target.result; }; r.readAsDataURL(f); }); }
+  if(heroLoad){ heroLoad.addEventListener('click',()=>{ const u=(heroUrl.value||'').trim(); if(!u) return; const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>{ heroImg=im; }; im.onerror=()=>alert('URL ảnh không tải được.'); im.src=u; }); }
 })();
 </script>
 </body>
