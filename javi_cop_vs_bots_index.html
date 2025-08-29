@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>👮 Javi vs Bots</title>
+<style>
+  :root{--bg:#0b0f16;--card:#101624;--fg:#e8ecf4;--muted:#9aa3b2;--accent:#56a0ff;}
+  html,body{height:100%;}
+  body{margin:0;background:radial-gradient(900px 600px at 0% 0%,#172135 0,#0b0f16 55%);color:var(--fg);font:15px/1.45 system-ui,Segoe UI,Roboto,Arial}
+  header{position:fixed;inset:12px 12px auto 12px;display:flex;gap:10px;align-items:center;z-index:2}
+  .pill{background:#0e1422;border:1px solid #1b2740;padding:8px 12px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  canvas{display:block;margin:0 auto;max-width:min(1100px,96vw);max-height:88vh;border-radius:14px;background:repeating-linear-gradient(45deg, #0f1523, #0f1523 22px, #0c1220 22px, #0c1220 44px);border:1px solid #1a2236;box-shadow:0 30px 80px rgba(0,0,0,.35)}
+  .btn{cursor:pointer;background:linear-gradient(180deg,#5da6ff,#3a78ff);color:white;border:0;border-radius:12px;padding:9px 14px;font-weight:700;letter-spacing:.2px}
+  .btn:active{transform:translateY(1px)}
+  #ui{position:fixed;inset:auto 12px 12px 12px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+  #mob{display:none;gap:10px;align-items:center}
+  .dpad{display:grid;grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,48px);gap:6px}
+  .padb{width:48px;height:48px;border-radius:12px;background:#0e1422;border:1px solid #1b2740;color:var(--fg);display:flex;align-items:center;justify-content:center;font-weight:900}
+  .padb:active{transform:translateY(1px)}
+  .atk{width:72px;height:72px;border-radius:50%;background:linear-gradient(180deg,#ff7a7a,#ff3d3d);border:0;color:#fff;font-weight:900}
+  @media (max-width:800px){ #mob{display:flex} header{inset:8px} canvas{max-height:70vh} }
+</style>
+</head>
+<body>
+  <header class="pill">
+    <span id="hp">HP: 100</span>
+    <span id="score" style="margin-left:10px">Điểm: 0</span>
+    <span id="wave" style="margin-left:10px">Wave 1</span>
+    <span style="margin-left:10px;color:var(--muted)">[WASD/Phím mũi tên] di chuyển • [Space] đánh • [R] chơi lại • Ảnh: <code>javi.JPG</code></span>
+    <button id="restart" class="btn" style="margin-left:10px">↻ Restart</button>
+  </header>
+  <main style="display:grid;place-items:center;min-height:100%">
+    <canvas id="game" width="960" height="540"></canvas>
+  </main>
+  <div id="ui">
+    <div id="mob">
+      <div class="dpad">
+        <button class="padb" data-k="ArrowUp">▲</button>
+        <div></div>
+        <button class="padb" data-k="ArrowRight">▶</button>
+        <button class="padb" data-k="ArrowLeft">◀</button>
+        <button class="padb" data-k="ArrowDown">▼</button>
+        <div></div>
+      </div>
+      <button id="mobAtk" class="atk">ĐÁNH</button>
+    </div>
+    <div></div>
+  </div>
+<script>
+(()=>{
+  const cv = document.getElementById('game'), ctx=cv.getContext('2d');
+  const hpEl = document.getElementById('hp'), scoreEl=document.getElementById('score'), waveEl=document.getElementById('wave');
+  const restartBtn=document.getElementById('restart');
+
+  // Load player portrait (tries javi.JPG next to index.html)
+  let javiImg = new Image();
+  javiImg.onload = ()=>{};
+  javiImg.onerror = ()=>{ javiImg=null; };
+  javiImg.src = 'javi.JPG'; // change if needed
+
+  // Game state
+  const state = { w: cv.width, h: cv.height, over:false, wave:1, score:0 };
+  const keys = new Set();
+
+  const rand = (a,b)=> a + Math.random()*(b-a);
+  const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
+
+  class Entity{
+    constructor(x,y){ this.x=x; this.y=y; this.vx=0; this.vy=0; this.r=18; this.hp=100; this.maxhp=100; this.dead=false; }
+    get pos(){ return {x:this.x,y:this.y}; }
+  }
+
+  class Player extends Entity{
+    constructor(x,y){ super(x,y); this.r=22; this.speed=2.6; this.dir=0; this.atkCD=0; this.inv=0; }
+    step(){
+      let ax=0, ay=0;
+      if(keys.has('w')||keys.has('ArrowUp')) ay-=1;
+      if(keys.has('s')||keys.has('ArrowDown')) ay+=1;
+      if(keys.has('a')||keys.has('ArrowLeft')) ax-=1;
+      if(keys.has('d')||keys.has('ArrowRight')) ax+=1;
+      const len=Math.hypot(ax,ay)||1; ax/=len; ay/=len;
+      this.vx=ax*this.speed; this.vy=ay*this.speed;
+      if(ax||ay) this.dir=Math.atan2(ay,ax);
+      this.x=clamp(this.x+this.vx, 24, state.w-24);
+      this.y=clamp(this.y+this.vy, 24, state.h-24);
+      this.atkCD=Math.max(0,this.atkCD-1);
+      this.inv=Math.max(0,this.inv-1);
+    }
+    attack(){ if(this.atkCD>0) return null; this.atkCD=22; // ~0.35s
+      return {x:this.x+Math.cos(this.dir)*28, y:this.y+Math.sin(this.dir)*28, r:38, dmg:40};
+    }
+    hit(dmg, kx, ky){ if(this.inv>0) return; this.hp-=dmg; this.inv=25; this.x+=kx; this.y+=ky; if(this.hp<=0){ state.over=true; }
+      hpEl.textContent='HP: '+Math.max(0,Math.round(this.hp)); }
+    draw(){
+      // soft shadow
+      ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(this.x+0, this.y+14, this.r*0.9, this.r*0.45, 0, 0, Math.PI*2); ctx.fill();
+      // body
+      ctx.fillStyle='#1f3960'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2); ctx.fill();
+      // head portrait clipped
+      if(javiImg){
+        ctx.save(); ctx.beginPath(); ctx.arc(this.x,this.y,this.r-4,0,Math.PI*2); ctx.clip();
+        ctx.drawImage(javiImg, this.x-(this.r-4), this.y-(this.r-4), (this.r-4)*2, (this.r-4)*2);
+        ctx.restore();
+      } else {
+        ctx.fillStyle='#6fb1ff'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r-4,0,Math.PI*2); ctx.fill();
+      }
+      // police hat
+      ctx.fillStyle='#0b2b6f'; ctx.beginPath(); ctx.moveTo(this.x-this.r*0.9,this.y-this.r*0.6);
+      ctx.quadraticCurveTo(this.x,this.y-this.r*1.2,this.x+this.r*0.9,this.y-this.r*0.6);
+      ctx.quadraticCurveTo(this.x,this.y-this.r*0.2,this.x-this.r*0.9,this.y-this.r*0.6); ctx.fill();
+      ctx.fillStyle='#ffd76a'; ctx.fillRect(this.x-6,this.y+this.r*0.1,12,5); // badge
+    }
+  }
+
+  class Bot extends Entity{
+    constructor(x,y,spd,hp){ super(x,y); this.r=18; this.speed=spd||1.7; this.hp=hp||50; this.maxhp=this.hp; this.hitCD=0; }
+    step(player){
+      const dx=player.x-this.x, dy=player.y-this.y; const d=Math.hypot(dx,dy)||1; const nx=dx/d, ny=dy/d;
+      this.x+=nx*this.speed; this.y+=ny*this.speed; this.hitCD=Math.max(0,this.hitCD-1);
+      if(d < this.r+player.r-2 && this.hitCD===0){ this.hitCD=30; player.hit(8, -nx*18, -ny*18); }
+    }
+    draw(){
+      ctx.fillStyle='#2a2f3f'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r+6,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#9ce2ff'; ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2); ctx.fill();
+      // eye line
+      ctx.strokeStyle='#072d3e'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(this.x-this.r*0.6,this.y); ctx.lineTo(this.x+this.r*0.6,this.y); ctx.stroke();
+    }
+  }
+
+  const player = new Player(state.w/2, state.h/2);
+  const bots=[]; let swing=null; // attack hit area
+
+  function spawnWave(){
+    const base = 4 + state.wave*2; // number of bots
+    for(let i=0;i<base;i++){
+      const side = (Math.random()*4)|0; let x,y;
+      if(side===0){ x=rand(-50,-10); y=rand(0,state.h);} // left
+      if(side===1){ x=rand(state.w+10,state.w+50); y=rand(0,state.h);} // right
+      if(side===2){ x=rand(0,state.w); y=rand(-50,-10);} // top
+      if(side===3){ x=rand(0,state.w); y=rand(state.h+10,state.h+50);} // bottom
+      const spd = 1.5 + Math.random()*0.6 + state.wave*0.08; const hp = 40 + state.wave*6;
+      bots.push(new Bot(x,y,spd,hp));
+    }
+  }
+
+  function attack(){ const a=player.attack(); if(!a) return; swing=a; // damage check
+    for(const b of bots){ if(b.dead) continue; const d=Math.hypot(b.x-a.x,b.y-a.y); if(d<a.r+b.r){ b.hp-=a.dmg; state.score+=10; if(b.hp<=0){ b.dead=true; state.score+=40; } } }
+    scoreEl.textContent='Điểm: '+state.score;
+  }
+
+  function update(){
+    if(state.over){ draw(true); return; }
+    player.step();
+    for(const b of bots){ if(!b.dead) b.step(player); }
+    // prune dead
+    for(let i=bots.length-1;i>=0;i--) if(bots[i].dead) bots.splice(i,1);
+    // next wave when all bots cleared
+    if(bots.length===0){ state.wave++; waveEl.textContent='Wave '+state.wave; spawnWave(); }
+  }
+
+  function draw(gameOver=false){
+    ctx.clearRect(0,0,state.w,state.h);
+    // grid
+    ctx.globalAlpha=.15; ctx.fillStyle='#6aa3ff';
+    for(let x=0;x<state.w;x+=32){ ctx.fillRect(x,0,1,state.h); }
+    for(let y=0;y<state.h;y+=32){ ctx.fillRect(0,y,state.w,1); }
+    ctx.globalAlpha=1;
+
+    // swing
+    if(swing){ ctx.fillStyle='rgba(255,90,90,.35)'; ctx.beginPath(); ctx.arc(swing.x,swing.y,swing.r,0,Math.PI*2); ctx.fill(); swing=null; }
+
+    // entities
+    player.draw();
+    for(const b of bots){ b.draw(); }
+
+    if(gameOver){
+      ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(0,0,state.w,state.h);
+      ctx.fillStyle='#fff'; ctx.font='700 36px system-ui,Segoe UI,Roboto'; ctx.textAlign='center'; ctx.fillText('GAME OVER', state.w/2, state.h/2-10);
+      ctx.font='16px system-ui,Segoe UI,Roboto'; ctx.fillText('Nhấn R để chơi lại', state.w/2, state.h/2+22);
+    }
+  }
+
+  function loop(){ update(); draw(); requestAnimationFrame(loop); }
+  spawnWave(); requestAnimationFrame(loop);
+
+  // input
+  document.addEventListener('keydown',e=>{
+    const k=e.key.length===1?e.key.toLowerCase():e.key; keys.add(k);
+    if(k===' '||k==='Spacebar'){ e.preventDefault(); attack(); }
+    if(k==='r'){ location.reload(); }
+  });
+  document.addEventListener('keyup',e=>{ const k=e.key.length===1?e.key.toLowerCase():e.key; keys.delete(k); });
+  cv.addEventListener('pointerdown',()=>attack());
+
+  // mobile buttons
+  for(const b of document.querySelectorAll('.padb')){
+    const k=b.dataset.k; const down=()=>keys.add(k), up=()=>keys.delete(k);
+    b.addEventListener('pointerdown',e=>{e.preventDefault(); down();});
+    b.addEventListener('pointerup',up); b.addEventListener('pointerleave',up);
+  }
+  document.getElementById('mobAtk').addEventListener('pointerdown',e=>{e.preventDefault(); attack();});
+  restartBtn.addEventListener('click',()=>location.reload());
+})();
+</script>
+</body>
+</html>
